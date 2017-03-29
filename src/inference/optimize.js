@@ -54,6 +54,9 @@ module.exports = function(env) {
       logProgressFilename: 'optimizeProgress.csv',
       logProgressThrottle: 200,
 
+      stepProgress: options.stepFunction != undefined,
+      stepProgressThrottle: 1,
+
       checkpointParams: false,
       checkpointParamsFilename: 'optimizeParams.json',
       checkpointParamsThrottle: 10000
@@ -87,7 +90,7 @@ module.exports = function(env) {
     var history = [];
 
     // For writing progress to disk
-    var logFile, logProgress;
+    var logFile, logProgress, stepProgress;
     if (options.logProgress) {
       logFile = fs.openSync(options.logProgressFilename, 'w');
       fs.writeSync(logFile, 'index,iter,time,objective\n');
@@ -98,6 +101,15 @@ module.exports = function(env) {
         fs.writeSync(logFile, nodeUtil.format('%d,%d,%d,%d\n', ncalls, i, t, objective));
         ncalls++;
       }, options.logProgressThrottle, { trailing: false });
+    }
+
+    if (options.stepProgress)
+    {
+      stepProgress = _.throttle(function(i, objective) {
+        var t = (present() - starttime) / 1000;
+        stepProgress(ncalls, i, t, objective)
+        ncalls++;
+      }, options.stepProgressThrottle, { trailing: false });
     }
 
     // For checkpointing params to disk
@@ -136,6 +148,10 @@ module.exports = function(env) {
             }
             if (options.logProgress) {
               logProgress(i, objective);
+            }
+            if (options.stepProgress)
+            {
+              stepProgress(i, objective)
             }
             if (options.checkpointParams) {
               checkpointParams();
