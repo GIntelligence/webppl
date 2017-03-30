@@ -1259,35 +1259,67 @@ function lnfactExact(x) {
   return t;
 }
 
+function poissonSample(mu) {
+  var k = 0;
+  var mu = ad.value(mu);
+  while (mu > 10) {
+    var m = 7 / 8 * mu;
+    var x = gammaSample(m, 1);
+    if (x > mu) {
+      return (k + binomialSample(mu / x, m - 1)) || 0;
+    } else {
+      mu -= x;
+      k += m;
+    }
+  }
+  var emu = Math.exp(-mu);
+  var p = 1;
+  do {
+    p *= util.random();
+    k++;
+  } while (p > emu);
+  return (k - 1) || 0;
+}
+
 var Poisson = makeDistributionType({
   name: 'Poisson',
   desc: 'Distribution over integers.',
   params: [{name: 'mu', desc: 'mean', type: types.positiveReal}],
   wikipedia: true,
   sample: function() {
-    var k = 0;
-    var mu = ad.value(this.params.mu);
-    while (mu > 10) {
-      var m = 7 / 8 * mu;
-      var x = gammaSample(m, 1);
-      if (x > mu) {
-        return (k + binomialSample(mu / x, m - 1)) || 0;
-      } else {
-        mu -= x;
-        k += m;
-      }
-    }
-    var emu = Math.exp(-mu);
-    var p = 1;
-    do {
-      p *= util.random();
-      k++;
-    } while (p > emu);
-    return (k - 1) || 0;
+    return poissonSample(this.params.mu);
   },
   score: function(val) {
     'use ad';
     return val * Math.log(this.params.mu) - this.params.mu - lnfact(val);
+  }
+});
+
+function mvPoissonScore(mus, x) {
+  var lnfacts = ad.tensor.logGamma(ad.tensor.add(x, 1));
+  return ad.tensor.sumreduce(ad.tensor.sub(
+    ad.tensor.mul(x, ad.tensor.log(mus)),
+    ad.tensor.add(mus, lnfacts)
+  ));
+}
+
+var MultivariatePoisson = makeDistributionType({
+  name: 'MultivariatePoisson',
+  desc: 'Distribution over a tensor of independent Poisson variables.',
+  params: [{name: 'mus', desc: 'means', type: types.positiveVector}],
+  wikipedia: false,
+  sample: function() {
+    var mus = ad.value(this.params.mus);
+    var d = mus.dims[0];
+    var x = new Tensor([d, 1]);
+    var n = x.length;
+    while (n--) {
+      x.data[n] = poissonSample(mus.data[n]);
+    }
+    return x;
+  },
+  score: function(val) {
+    return mvPoissonScore(this.params.mus, val);
   }
 });
 
@@ -1578,6 +1610,7 @@ var distributions = {
   Binomial: Binomial,
   Multinomial: Multinomial,
   Poisson: Poisson,
+  MultivariatePoisson: MultivariatePoisson,
   Dirichlet: Dirichlet,
   Marginal: Marginal,
   SampleBasedMarginal: SampleBasedMarginal,
